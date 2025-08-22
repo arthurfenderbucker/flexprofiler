@@ -1,9 +1,8 @@
+
 import time
-from flexprofiler import FlexProfiler
+from flexprofiler import track_all, stats
 
-profiler = FlexProfiler(max_depth=5, detailed=True, record_each_call=True)
-
-@profiler.track_all_recursive()
+@track_all()
 class Foo:
     def __init__(self):
         self.sub_class = Bar()
@@ -35,5 +34,4 @@ class Bar:
 Foo().example_method()
 Foo().calling_subclass_method()
 
-# profiler.display_overall_stats()
-profiler.stats()
+stats()

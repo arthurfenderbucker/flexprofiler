@@ -1,15 +1,12 @@
 import time
-from flexprofiler import FlexProfiler
+from flexprofiler import stats, track
 
-profiler = FlexProfiler(max_depth=5, detailed=True, record_each_call=True)
-
-@profiler.track
+# use @track() decorator to profile the function
+@track()
 def simple_func():
-    for i in range(3):
-        time.sleep(0.1)
+    time.sleep(0.1)
 
 simple_func()
 simple_func()
 
-# profiler.display_overall_stats()
-profiler.stats()
+stats() # display the profiling statistics

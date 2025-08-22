@@ -7,18 +7,36 @@ A flexible profiling utility for Python.
 ```bash
 pip install flexprofiler
 ```
+## Usage
 
-## Usage Examples
+
+```python
+from flexprofiler import track, stats
+
+@track
+def my_function():
+    # Your code
+    pass
+
+for _ in range(3):
+    my_function()
+    
+stats() # Display profiling statistics
+```
+
+
+---
+
+## Examples
 
 ### 1. Tracking a Simple Function
 
 ```python
 import time
-from flexprofiler import FlexProfiler
+from flexprofiler import track, stats
 
-profiler = FlexProfiler(max_depth=5, detailed=True, record_each_call=True)
 
-@profiler.track
+@track
 def simple_func():
     for i in range(3):
         time.sleep(0.1)
@@ -26,7 +44,7 @@ def simple_func():
 simple_func()
 simple_func()
 
-profiler.stats()
+stats()
 ```
 
 #### Output
@@ -52,11 +70,9 @@ Detailed Function Call Statistics:
 
 ```python
 import time
-from flexprofiler import FlexProfiler
+from flexprofiler import track_all, stats
 
-profiler = FlexProfiler(max_depth=5, detailed=True, record_each_call=True)
-
-@profiler.track_all_recursive()
+@track_all()
 class Foo:
     def example_method(self):
         self.another_method()
@@ -67,7 +83,7 @@ class Foo:
 Foo().example_method()
 Foo().another_method()
 
-profiler.stats()
+stats()
 ```
 
 output:
@@ -94,11 +110,9 @@ Detailed Function Call Statistics:
 
 ```python
 import time
-from flexprofiler import FlexProfiler
+from flexprofiler import track_all, stats
 
-profiler = FlexProfiler(max_depth=5, detailed=True, record_each_call=True)
-
-@profiler.track_all_recursive()
+@track_all()
 class Foo:
     def __init__(self):
         self.sub_class = Bar()
@@ -131,7 +145,7 @@ obj = Foo()
 obj.example_method()
 obj.calling_subclass_method()
 
-profiler.stats()
+stats()
 ```
 
 output:
