@@ -2,10 +2,10 @@
 import time
 from flexprofiler import track_all, stats
 
-@track_all()
+@track_all(max_depth=3)  # Use the max_depth parameter to limit the depth of profiling
 class Foo:
     def __init__(self):
-        self.sub_class = Bar()
+        self.sub_class = Bar()  # Any class instantiated in the __init__ will be recursively tracked
     def example_method(self):
         self.another_method()
         time.sleep(0.1)

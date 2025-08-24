@@ -19,7 +19,6 @@ import inspect
 import sys
 
 
-
 # Color gradient from green (fast) to red (slow)
 def color_by_time(avg_time, max_time):
     """Return an ANSI 256-color escape sequence representing relative cost.
@@ -61,7 +60,7 @@ def color_by_time(avg_time, max_time):
 
 
 # Build tree-like indentation with lines
-def get_indent(depth, is_last_list):
+def get_indent(depth, is_last_list, code=False):
     """Return a tree-like indent string for a node at ``depth``.
 
     The function generates characters such as '│', '├──' and '└──' to make a
@@ -74,6 +73,8 @@ def get_indent(depth, is_last_list):
     is_last_list : Sequence[bool]
         Booleans indicating whether each ancestor at that depth was the last
         sibling (controls whether vertical lines are drawn).
+    code : bool
+        Whether to use code block indentation.
 
     Returns
     -------
@@ -84,8 +85,10 @@ def get_indent(depth, is_last_list):
     for d in range(depth):
         if d < depth - 1:
             indent += "  │  " if not is_last_list[d] else "     "
-        else:
+        elif not code:
             indent += "  └──" if is_last_list[d] else "  ├──"
+        else:
+            indent += "     " if is_last_list[d] else "  │  "
     return indent
 
 
@@ -148,8 +151,6 @@ class FlexProfiler:
     """
 
     def __init__(self, detailed=False, record_each_call=True):
-        self.calls_count = defaultdict(int)
-        self.total_time = defaultdict(float)
         self.exec_log = defaultdict(tuple)
 
         self.detailed = detailed
@@ -158,10 +159,12 @@ class FlexProfiler:
         self.call_graph = defaultdict(list)
 
         self.call_queue = []
-        # Per-function, per-line accumulated times: {func_key: {lineno: seconds}}
-        self.line_stats = defaultdict(lambda: defaultdict(float))
-        # Per-function, per-line execution counts: {func_key: {lineno: count}}
-        self.line_counts = defaultdict(lambda: defaultdict(int))
+        # Per-function, per-line accumulated times: {func_key: {lineno: {"count", "elapsed", "exec_log", "children"}}}
+        self.line_stats = defaultdict(
+            lambda: defaultdict(
+                lambda: {"count": 0, "total_time": 0.0, "exec_log": [], "children": []}
+            )
+        )
 
     def _update_call_graph(self, call_graph, call_queue, elapsed_time):
         """Recursively update the nested call-graph structure.
@@ -201,7 +204,16 @@ class FlexProfiler:
             if self.record_each_call:
                 call_graph[call_queue[0]]["exec_log"] += [elapsed_time]
 
-    def track(self, func=None, *, max_depth=10, arg_sensitive=None, include=None, exclude=None, lines=False):
+    def track(
+        self,
+        func=None,
+        *,
+        max_depth=10,
+        arg_sensitive=None,
+        include=None,
+        exclude=None,
+        lines=False,
+    ):
         """Decorator factory to measure execution time of functions.
 
         Can be used either with or without arguments::
@@ -252,7 +264,17 @@ class FlexProfiler:
                 level = len(self.call_queue)
                 is_arg_sensitive = arg_sensitive and (func_name_base in arg_sensitive)
                 if level < max_depth:
-                    if args and hasattr(args[0], "__class__"):
+                    # Determine whether this is a bound method by checking the
+                    # wrapped function signature: treat as method only when
+                    # the first parameter is named 'self' and an argument was
+                    # provided.
+                    try:
+                        sig = inspect.signature(inner_func)
+                        params = list(sig.parameters.keys())
+                    except Exception:
+                        params = []
+
+                    if params and params[0] == "self" and args:
                         key_base = f"{args[0].__class__.__name__}.{func_name_base}"
                     else:
                         key_base = func_name_base
@@ -273,9 +295,9 @@ class FlexProfiler:
 
                     # Option A: line-by-line tracing enabled
                     if lines:
+                        import linecache
 
                         target_code = inner_func.__code__
-
                         # Per-call temporary storage for this invocation
                         curr_frame_states = {}
 
@@ -284,7 +306,7 @@ class FlexProfiler:
                             if frame.f_code is not target_code:
                                 return None
 
-                            now = time.time()
+                            now = time.perf_counter()
 
                             if event == "call":
                                 # Initialize tracking state for this frame
@@ -305,12 +327,22 @@ class FlexProfiler:
 
                                 elapsed = now - st["last_time"]
                                 lineno = st["last_line"]
-                                # Accumulate per-line totals for this function key
-                                self.line_stats[key][lineno] += elapsed
-                                self.line_counts[key][lineno] += 1
+                                # Store source line content (strip trailing newline)
+                                src = linecache.getline(
+                                    frame.f_code.co_filename, lineno
+                                ).rstrip("\n")
+                                if src:
+                                    if src.strip()[0] != "@":
+                                        self.line_stats[key][lineno]["content"] = src
+                                        # Accumulate per-line totals for this function key
+                                        self.line_stats[key][lineno]["total_time"] += (
+                                            elapsed
+                                        )
+                                        self.line_stats[key][lineno]["count"] += 1
                                 # Update last seen
                                 st["last_time"] = now
                                 st["last_line"] = frame.f_lineno
+                                # continue tracing this frame
                                 return _global_tracer
 
                             if event == "return":
@@ -318,35 +350,37 @@ class FlexProfiler:
                                 if st is not None:
                                     elapsed = now - st["last_time"]
                                     lineno = st["last_line"]
-                                    self.line_stats[key][lineno] += elapsed
-                                    self.line_counts[key][lineno] += 1
+                                    self.line_stats[key][lineno]["total_time"] += (
+                                        elapsed
+                                    )
+                                    self.line_stats[key][lineno]["count"] += 1
+                                    src = linecache.getline(
+                                        frame.f_code.co_filename, lineno
+                                    ).rstrip("\n")
+                                    if src:
+                                        self.line_stats[key][lineno]["content"] = src
+
                                 return _global_tracer
 
                             return None
 
                         prev_tracer = sys.gettrace()
 
-                        sys.settrace(_global_tracer)
-                        start_time = time.time()
-                        result = inner_func(*args, **kwargs)
-                        end_time = time.time()
-                        sys.settrace(prev_tracer)
+                        try:
+                            sys.settrace(_global_tracer)
+                            start_time = time.perf_counter()
+                            result = inner_func(*args, **kwargs)
+                            end_time = time.perf_counter()
+                        finally:
+                            # Restore previous tracer
+                            sys.settrace(prev_tracer)
 
                     else:
-                        start_time = time.time()
+                        start_time = time.perf_counter()
                         result = inner_func(*args, **kwargs)
-                        end_time = time.time()
-                        
+                        end_time = time.perf_counter()
+
                     elapsed_time = end_time - start_time
-
-                    func_name = key
-                    if func_name not in self.calls_count:
-                        self.calls_count[func_name] = 0
-                        self.total_time[func_name] = 0.0
-                        self.exec_log[func_name] = []
-
-                    self.calls_count[func_name] += 1
-                    self.total_time[func_name] += elapsed_time
 
                     if self.detailed:
                         self._update_call_graph(
@@ -364,7 +398,7 @@ class FlexProfiler:
         else:
             return decorator(func)
 
-    def _stats(self, call_graph, depth=0, is_last_list=[]):
+    def _stats(self, call_graph, depth=0, is_last_list=[], unit: str = "s"):
         """Return a list of formatted (left, right) column tuples for printing.
 
         The helper prepares the strings for each node in the nested
@@ -382,6 +416,8 @@ class FlexProfiler:
             Current recursion depth used to compute indentation.
         is_last_list : list[bool]
             Booleans used to determine connector characters for ancestors.
+        unit : str
+            The time unit to use for displaying timings (e.g., "m", "s", "ms", "us").
 
         Returns
         -------
@@ -392,43 +428,70 @@ class FlexProfiler:
         # ANSI color codes
         RESET = "\033[0m"
         BOLD = "\033[1m"
+        ITALIC = "\033[3m"
+
+        if unit == "h":
+            scale = 1 / 3600.0
+        if unit == "m":
+            scale = 1 / 60.0
+        elif unit == "s":
+            scale = 1.0
+        elif unit == "ms":
+            scale = 1000.0
+        elif unit == "us":
+            scale = 1000000.0
+        else:
+            raise ValueError(f"Unsupported time unit '{unit}'")
 
         # Find max avg_time at this level for coloring
         avg_times = [
-            stats.get("total_time", 0.0) / stats.get("count", 1)
+            scale * stats.get("total_time", 0.0) / stats.get("count", 1)
             for stats in call_graph.values()
             if stats.get("count", 0) > 0
         ]
         max_avg_time = max(avg_times) if avg_times else 0.0
 
         # Prepare list of (func_name, stats) and mark which is last at this level
-        items = list(call_graph.items())
-        n_items = len(items)
+        nodes = list(call_graph.items())
+        n_items = len(nodes)
 
         lines_content = []
-        for i, (func_name, stats) in enumerate(items):
+        for i, (func_name, stats) in enumerate(nodes):
             is_last_list_new = is_last_list + [i == n_items - 1]
             indent = get_indent(depth, is_last_list_new)
             count = stats.get("count", 0)
-            total_time = stats.get("total_time", 0.0)
+            total_time = stats.get("total_time", 0.0) * scale
             avg_time = total_time / count if count > 0 else 0
 
             color_func = color_by_time(avg_time, max_avg_time)
             color_avg = color_by_time(avg_time, max_avg_time)
 
             before_spacer = f"{indent}{color_func}{BOLD}{func_name}{RESET}: "
-            after_spacer = f"{count} calls, {total_time:.4f}s, {color_avg}Avg: {avg_time:.4f}s{RESET}"
+            after_spacer = f"{count} calls, {total_time:.2f}{unit}, {color_avg}Avg: {avg_time:.2f}{unit}{RESET}"
 
             if self.record_each_call:
                 exec_log = stats.get("exec_log", [])
                 if exec_log and len(exec_log) > 1:
-                    std_time = statistics.stdev(exec_log)
-                    median_time = statistics.median(exec_log)
+                    std_time = statistics.stdev(exec_log) * scale
+                    median_time = statistics.median(exec_log) * scale
                     after_spacer += (
-                        f", Std: {std_time:.4f}s, Median: {median_time:.4f}s"
+                        f", Std: {std_time:.2f}{unit}, Median: {median_time:.2f}{unit}"
                     )
 
             lines_content.append((before_spacer, after_spacer))
+
+            if func_name in self.line_stats:
+                # print times line by line (sorted by line number)
+                l_indent = get_indent(depth, is_last_list_new, code=True)
+                for line_num, l_stats in sorted(self.line_stats[func_name].items()):
+                    content = l_stats.get("content") or ""
+                    # Show line number then content; keep original leading whitespace
+                    l_before_spacer = f"{l_indent}{ITALIC}{line_num}{RESET}: {content}"
+                    count = l_stats.get("count", 0)
+                    total = l_stats.get("total_time", 0.0) * scale
+                    avr_line_time = total / count if count > 0 else 0.0
+                    l_after_spacer = f"{count} calls, {total:.2f}{unit}, Avg: {avr_line_time:.2f}{unit}"
+                    lines_content.append((l_before_spacer, l_after_spacer))
 
             if "children" in stats:
                 lines_content.extend(
@@ -436,40 +499,20 @@ class FlexProfiler:
                         stats["children"],
                         depth + 1,
                         is_last_list_new if depth > 0 else [],
+                        unit=unit,
                     )
                 )
 
         return lines_content
 
-    def display_overall_stats(self):
-        """Print aggregate call counts and total/avg times for each function.
-
-        This method shows per-function aggregated statistics and is useful
-        for a quick, flat overview of where time is spent.
-        """
-        print("Function Call Statistics:")
-        for func_name, count in self.calls_count.items():
-            total_time = self.total_time[func_name]
-            avg_time = total_time / count if count > 0 else 0
-            print(
-                f"{func_name}: {count} calls, Total Time: {total_time:.4f}s, Avg Time: {avg_time:.4f}s"
-            )
-
-        print("\n")
-
-    def stats(self, simple=False):
+    def stats(self, unit: str = "ms"):
         """Print either a simple flat report or a detailed call-graph report.
 
         Parameters
         ----------
-        simple : bool
-            When True print only aggregated per-function totals. When False
-            print the nested call-graph (requires the profiler to be
-            initialized with ``detailed=True``).
+        unit : str (default: "ms")
+            The time unit to use for displaying timings (e.g., "m", "s", "ms", "us").
         """
-        if simple:
-            self.display_overall_stats()
-            return
         if not self.detailed:
             print(
                 "Detailed statistics are not enabled. Set `detailed=True` when initializing FlexProfiler."
@@ -477,7 +520,8 @@ class FlexProfiler:
             return
         print("Detailed Function Call Statistics:")
         # display the call graph recursively
-        lines_content = self._stats(self.call_graph)
+
+        lines_content = self._stats(self.call_graph, unit=unit)
 
         max_length = max([len(before_spacer) for before_spacer, _ in lines_content])
         for before_spacer, after_spacer in lines_content:
@@ -602,5 +646,4 @@ if __name__ == "__main__":
     Foo().example_method()
     Foo().calling_subclass_method()
 
-    task_tracker.stats(simple=True)
     task_tracker.stats()

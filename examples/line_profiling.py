@@ -8,20 +8,22 @@ from flexprofiler import track, stats
 
 
 @track(lines=True)
-def compute(n):
+def bar(n):
     total = 0
     for i in range(n):
         total += i
         if i % 2 == 0:
-            # Simulate work on some lines
             time.sleep(0.001)
         else:
             time.sleep(0.0005)
     return total
 
+@track()
+def foo():
+    for _ in range(3):
+        bar(50)
 
 if __name__ == "__main__":
-    for _ in range(3):
-        compute(50)
+    foo()
 
     stats()  # display the profiling statistics

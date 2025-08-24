@@ -10,8 +10,12 @@ def test_simple_func_stats():
             time.sleep(0.01)
     simple_func()
     simple_func()
-    assert profiler.calls_count['simple_func'] == 2
-    assert profiler.total_time['simple_func'] > 0
+    # Ensure the call_graph recorded two calls to simple_func and that
+    # some non-zero time was accumulated for the function in the call_graph
+    assert 'simple_func' in profiler.call_graph
+    stats = profiler.call_graph['simple_func']
+    assert stats.get('count', 0) == 2
+    assert stats.get('total_time', 0) > 0
 
 def test_class_tracking():
     profiler = FlexProfiler(detailed=True, record_each_call=True)
@@ -45,13 +49,14 @@ def test_class_tracking():
     obj = Foo()
     obj.example_method()
     obj.calling_subclass_method()
-    # Check that tracked methods are present
-    assert 'Foo.example_method' in profiler.calls_count
-    assert 'Foo.another_method' in profiler.calls_count
+    # Check that tracked methods are present in the detailed call_graph
+    assert profiler.detailed, "test expects detailed call graph to be enabled"
+    assert 'Foo.example_method' in profiler.call_graph
+    assert 'Foo.another_method' in profiler.call_graph
     # Foo methods should be tracked
     # Bar methods may or may not be recursively decorated depending on
     # implementation details; assert at least one Bar method tracked if present
-    bar_methods = [k for k in profiler.calls_count.keys() if k.startswith('Bar.')]
+    bar_methods = [k for k in profiler.call_graph.keys() if k.startswith('Bar.')]
     if not bar_methods:
         # If Bar methods weren't decorated, ensure this is by design and
         # not silently failing to record Foo methods (which we already checked).
