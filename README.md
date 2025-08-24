@@ -8,23 +8,20 @@ A flexible profiling utility for Python.
 pip install flexprofiler
 ```
 ## Usage
+A lightweight summary showing the most common ways to use flexprofiler.
 
+Basic concepts:
 
-```python
-from flexprofiler import track, stats
-
-@track
-def my_function():
-    # Your code
-    pass
-
-for _ in range(3):
-    my_function()
+- `@track()` - decorate a function to collect call counts and timing statistics. Args:
+    - `lines`: boolean, collect per-line timing inside the function.
+- `@track_all()` - Decorate a class to profile all its methods. Args:
+    - `max_depth`: integer, how deep to recursively profile composed objects (default: 10).
+    - `include`: list of method names to track (default: None to track all).
+    - `exclude`: list of method names to skip (default: None to skip none).
+    - `arg_sensitive`: list of method names to track argument values (default: None).
+- `stats()` - print aggregated profiling statistics (function-level and, when enabled, line-level). Args:
+    - `unit`: the time unit to use for displaying statistics (default: "ms").
     
-stats() # Display profiling statistics
-```
-
-
 ---
 
 ## Examples
@@ -45,22 +42,12 @@ simple_func()
 stats() # display the profiling statistics
 ```
 
-#### Output
+output:
 
-<?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<!-- This file was created with the aha Ansi HTML Adapter. https://github.com/theZiz/aha -->
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta http-equiv="Content-Type" content="application/xml+xhtml; charset=UTF-8"/>
-</head>
-<body>
 <pre>
 Detailed Function Call Statistics:
 <span style="color:#ff0000;"></span><span style="font-weight:bold;color:#ff0000;">simple_func</span>: ───2 calls, 200.43ms, <span style="color:#ff0000;">Avg: 100.21ms</span>, Std: 0.01ms, Median: 100.21ms
 </pre>
-</body>
-</html>
 
 ### 2. Tracking All Methods in a Class
 
@@ -83,22 +70,12 @@ stats()
 ```
 
 output:
-<?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<!-- This file was created with the aha Ansi HTML Adapter. https://github.com/theZiz/aha -->
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta http-equiv="Content-Type" content="application/xml+xhtml; charset=UTF-8"/>
-</head>
-<body>
 <pre>
 Detailed Function Call Statistics:
 <span style="color:#ff0000;"></span><span style="font-weight:bold;color:#ff0000;">Foo.example_method</span>: ────────1 calls, 300.23ms, <span style="color:#ff0000;">Avg: 300.23ms</span>
   └──<span style="color:#ff0000;"></span><span style="font-weight:bold;color:#ff0000;">Foo.another_method</span>: ───1 calls, 200.10ms, <span style="color:#ff0000;">Avg: 200.10ms</span>
 <span style="color:#ffaf87;"></span><span style="font-weight:bold;color:#ffaf87;">Foo.another_method</span>: ────────1 calls, 200.11ms, <span style="color:#ffaf87;">Avg: 200.11ms</span>
 </pre>
-</body>
-</html>
 
 
 ### 3. Tracking All Methods in a Class Recursively
@@ -144,14 +121,6 @@ stats()
 ```
 
 output:
-<?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<!-- This file was created with the aha Ansi HTML Adapter. https://github.com/theZiz/aha -->
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta http-equiv="Content-Type" content="application/xml+xhtml; charset=UTF-8"/>
-</head>
-<body>
 <pre>
 Detailed Function Call Statistics:
 <span style="color:#00ff00;"></span><span style="font-weight:bold;color:#00ff00;">Foo.__init__</span>: ───────────────────2 calls, 0.11ms, <span style="color:#00ff00;">Avg: 0.06ms</span>, Std: 0.08ms, Median: 0.06ms
@@ -166,8 +135,6 @@ Detailed Function Call Statistics:
        ├──<span style="color:#ff0000;"></span><span style="font-weight:bold;color:#ff0000;">Bar.a</span>: ───────────────3 calls, 60.29ms, <span style="color:#ff0000;">Avg: 20.10ms</span>, Std: 0.02ms, Median: 20.10ms
        └──<span style="color:#ffd7ff;"></span><span style="font-weight:bold;color:#ffd7ff;">Bar.b</span>: ───────────────3 calls, 30.28ms, <span style="color:#ffd7ff;">Avg: 10.09ms</span>, Std: 0.01ms, Median: 10.09ms
 </pre>
-</body>
-</html>
 
 ### 4. Track All lines in a function
 
@@ -193,15 +160,6 @@ def foo():
 ```
 
 outputs:
-<?xml version="1.0" encoding="UTF-8" ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<!-- This file was created with the aha Ansi HTML Adapter. https://github.com/theZiz/aha -->
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<meta http-equiv="Content-Type" content="application/xml+xhtml; charset=UTF-8"/>
-<title>stdin</title>
-</head>
-<body>
 <pre>
 Detailed Function Call Statistics:
 <span style="color:#ff0000;"></span><span style="font-weight:bold;color:#ff0000;">foo</span>: ──────────────────────────1 calls, 129.46ms, <span style="color:#ff0000;">Avg: 129.46ms</span>
@@ -214,9 +172,6 @@ Detailed Function Call Statistics:
      <span style="font-style:italic;">18</span>:             time.sleep(0.0005)───75 calls, 43.88ms, Avg: 0.59ms
      <span style="font-style:italic;">19</span>:     return total─────────────────3 calls, 0.01ms, Avg: 0.00ms
 </pre>
-</body>
-</html>
-
 
 
 
