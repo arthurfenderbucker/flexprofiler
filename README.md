@@ -1,16 +1,13 @@
 
 ![banner](https://raw.githubusercontent.com/arthurfenderbucker/flexprofiler/refs/heads/main/docs/assets/banner.png)
 
-# flexprofiler
-[![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Farthurfenderbucker%2Fflexprofiler%2Frefs%2Fheads%2Fmain%2Fpyproject.toml
-)](https://www.python.org)
-[![Pypi](https://img.shields.io/pypi/l/flexprofiler)](https://pypi.org/project/flexprofiler/)
-[![Pypi](https://img.shields.io/pypi/v/flexprofiler)](https://pypi.org/project/flexprofiler/)
-
+[![Python Version](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Farthurfenderbucker%2Fflexprofiler%2Frefs%2Fheads%2Fmain%2Fpyproject.toml)](https://www.python.org)
+[![PyPI License](https://img.shields.io/pypi/l/flexprofiler)](https://pypi.org/project/flexprofiler/)
+[![PyPI Version](https://img.shields.io/pypi/v/flexprofiler)](https://pypi.org/project/flexprofiler/)
 
 ## 🚀 About
 
-A flexible profiling utility for Python.
+**FlexProfiler** is a lightweight, flexible profiling utility for Python that makes it easy to measure function and method performance with minimal code changes. It supports both function-level and line-level profiling, recursive class method tracking, and customizable statistics reporting. Designed for developers who want actionable insights into their code’s runtime behavior, FlexProfiler helps you identify bottlenecks and optimize performance with simple decorators and clear output.
 
 ## 📦 Installation
 
@@ -18,9 +15,10 @@ A flexible profiling utility for Python.
 pip install flexprofiler
 ```
 ## :computer: Usage
-A lightweight summary showing the most common ways to use flexprofiler.
 
-Basic concepts:
+The most common usage involves adding simple decorators to your functions or classes, enabling you to profile execution time and other metrics with minimal changes to your codebase.
+This approach makes it easy to identify bottlenecks and optimize your code efficiently.
+
 
 - `@track()` - decorate a function to collect call counts and timing statistics. Args:
     - `lines`: boolean, collect per-line timing inside the function.
