@@ -1,6 +1,6 @@
 [project]
 name = "flexprofiler"
-version = "0.1.1"
+version = "0.1.2"
 description = "A flexible profiling utility for Python."
 authors = [
     { name = "Arthur Bucker", email = "abucker@andrew.cmu.edu" }

@@ -1,5 +1,5 @@
 
-![banner](docs/assets/banner.png)
+![banner](https://raw.githubusercontent.com/arthurfenderbucker/flexprofiler/refs/heads/main/docs/assets/banner.png)
 
 # flexprofiler
 [![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Farthurfenderbucker%2Fflexprofiler%2Frefs%2Fheads%2Fmain%2Fpyproject.toml
@@ -7,11 +7,12 @@
 [![Pypi](https://img.shields.io/pypi/l/flexprofiler)](https://pypi.org/project/flexprofiler/)
 [![Pypi](https://img.shields.io/pypi/v/flexprofiler)](https://pypi.org/project/flexprofiler/)
 
-## :rocket: About
+
+## 🚀 About
 
 A flexible profiling utility for Python.
 
-## :package: Installation
+## 📦 Installation
 
 ```bash
 pip install flexprofiler
@@ -33,7 +34,7 @@ Basic concepts:
     
 ---
 
-## :arrow_down: Examples
+## ⬇️ Examples
 
 ### 1. Tracking a Simple Function
 
@@ -158,9 +159,12 @@ stats()  # display the profiling statistics
 outputs:
 ![flexprofiler command output screenshot](docs/assets/lines.png)
 
-## :handshake: Feedback and Contributions
+## 🤝 Feedback and Contributions
 
 Contributions, suggestions, and feedback are welcome! Feel free to open issues or submit pull requests on [GitHub](https://github.com/arthurfenderbucker/flexprofiler).
 
 ## Author
-Arthur Bucker (<abucker@andrew.cmu.edu>)
+Arthur Fender C Bucker
+
+[![website](https://img.shields.io/website?url=https%3A%2F%2Farthurfenderbucker.github.io%2F&logo=github)](https://arthurfenderbucker.github.io/)
+
