@@ -1,13 +1,22 @@
+
+![banner](docs/assets/banner.png)
+
 # flexprofiler
+[![python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Farthurfenderbucker%2Fflexprofiler%2Frefs%2Fheads%2Fmain%2Fpyproject.toml
+)](https://www.python.org)
+[![Pypi](https://img.shields.io/pypi/l/flexprofiler)](https://pypi.org/project/flexprofiler/)
+[![Pypi](https://img.shields.io/pypi/v/flexprofiler)](https://pypi.org/project/flexprofiler/)
+
+## :rocket: About
 
 A flexible profiling utility for Python.
 
-## Installation
+## :package: Installation
 
 ```bash
 pip install flexprofiler
 ```
-## Usage
+## :computer: Usage
 A lightweight summary showing the most common ways to use flexprofiler.
 
 Basic concepts:
@@ -24,7 +33,7 @@ Basic concepts:
     
 ---
 
-## Examples
+## :arrow_down: Examples
 
 ### 1. Tracking a Simple Function
 
@@ -149,7 +158,9 @@ stats()  # display the profiling statistics
 outputs:
 ![flexprofiler command output screenshot](docs/assets/lines.png)
 
+## :handshake: Feedback and Contributions
 
+Contributions, suggestions, and feedback are welcome! Feel free to open issues or submit pull requests on [GitHub](https://github.com/arthurfenderbucker/flexprofiler).
 
 ## Author
 Arthur Bucker (<abucker@andrew.cmu.edu>)
