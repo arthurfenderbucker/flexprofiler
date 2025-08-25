@@ -1,3 +1,4 @@
+"""Simple function profiling example — demonstrates using @track to profile a standalone function."""
 import time
 from flexprofiler import stats, track
 

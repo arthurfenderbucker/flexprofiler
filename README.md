@@ -14,7 +14,7 @@
 ```bash
 pip install flexprofiler
 ```
-## :computer: Usage
+## 💻 Usage
 
 The most common usage involves adding simple decorators to your functions or classes, enabling you to profile execution time and other metrics with minimal changes to your codebase.
 This approach makes it easy to identify bottlenecks and optimize your code efficiently.
@@ -36,6 +36,8 @@ This approach makes it easy to identify bottlenecks and optimize your code effic
 
 ### 1. Tracking a Simple Function
 
+Simple function profiling example — demonstrates using @track to profile a standalone function.
+
 ```python
 import time
 from flexprofiler import stats, track
@@ -51,9 +53,13 @@ stats() # display the profiling statistics
 ```
 
 output:
-![flexprofiler command output screenshot](docs/assets/simple.png)
+![flexprofiler command output screenshot](https://raw.githubusercontent.com/arthurfenderbucker/flexprofiler/refs/heads/main/docs/assets/simple.png)
+
+<br>
 
 ### 2. Tracking All Methods in a Class
+
+Class profiling example — demonstrates using @track_all to profile all methods of a class.
 
 ```python
 import time
@@ -74,10 +80,13 @@ stats()
 ```
 
 output:
-![flexprofiler command output screenshot](docs/assets/class.png)
+![flexprofiler command output screenshot](https://raw.githubusercontent.com/arthurfenderbucker/flexprofiler/refs/heads/main/docs/assets/class.png)
 
+<br>
 
 ### 3. Tracking All Methods in a Class Recursively
+
+Recursive class profiling example — demonstrates recursively tracking methods in nested/instantiated classes using @track_all(max_depth=...).
 
 ```python
 import time
@@ -120,9 +129,13 @@ stats()
 ```
 
 output:
-![flexprofiler command output screenshot](docs/assets/recursive.png)
+![flexprofiler command output screenshot](https://raw.githubusercontent.com/arthurfenderbucker/flexprofiler/refs/heads/main/docs/assets/recursive.png)
+
+<br>
 
 ### 4. Track All lines in a function
+
+Line-by-line profiling example — demonstrates per-line timing with @track(lines=True).
 
 ```python
 import time
@@ -154,12 +167,16 @@ foo()
 stats()  # display the profiling statistics
 ```
 
-outputs:
-![flexprofiler command output screenshot](docs/assets/lines.png)
+output:
+![flexprofiler command output screenshot](https://raw.githubusercontent.com/arthurfenderbucker/flexprofiler/refs/heads/main/docs/assets/lines.png)
+
+<br>
 
 ## 🤝 Feedback and Contributions
 
 Contributions, suggestions, and feedback are welcome! Feel free to open issues or submit pull requests on [GitHub](https://github.com/arthurfenderbucker/flexprofiler).
+
+<br>
 
 ## Author
 Arthur Fender C Bucker

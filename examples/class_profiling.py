@@ -1,3 +1,4 @@
+"""Class profiling example — demonstrates using @track_all to profile all methods of a class."""
 import time
 from flexprofiler import track_all, stats
 

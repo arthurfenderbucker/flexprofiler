@@ -1,4 +1,4 @@
-
+"""Argument-sensitive profiling example — demonstrates grouping/profile keys by argument values using arg_sensitive."""
 from flexprofiler import track, track_all, stats
 import time
 

@@ -1,4 +1,4 @@
-
+"""Recursive class profiling example — demonstrates recursively tracking methods in nested/instantiated classes using @track_all(max_depth=...)."""
 import time
 from flexprofiler import track_all, stats
 

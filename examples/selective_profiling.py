@@ -1,3 +1,4 @@
+"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track_all."""
 from flexprofiler import track_all, stats
 import time
 

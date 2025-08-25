@@ -52,17 +52,15 @@ def test_class_tracking():
     # Check that tracked methods are present in the detailed call_graph
     assert profiler.detailed, "test expects detailed call graph to be enabled"
     assert 'Foo.example_method' in profiler.call_graph
-    assert 'Foo.another_method' in profiler.call_graph
+    assert "children" in profiler.call_graph["Foo.example_method"]
+    assert 'Foo.another_method' in profiler.call_graph["Foo.example_method"]["children"]
+    assert 'Foo.calling_subclass_method' in profiler.call_graph
+    assert "children" in profiler.call_graph["Foo.calling_subclass_method"]
     # Foo methods should be tracked
     # Bar methods may or may not be recursively decorated depending on
     # implementation details; assert at least one Bar method tracked if present
-    bar_methods = [k for k in profiler.call_graph.keys() if k.startswith('Bar.')]
-    if not bar_methods:
-        # If Bar methods weren't decorated, ensure this is by design and
-        # not silently failing to record Foo methods (which we already checked).
-        pytest.skip("Bar methods were not recursively decorated in this environment")
-    else:
-        # If any Bar methods were recorded, ensure the expected ones are present
-        assert 'Bar.subclass_method_1' in profiler.calls_count
-        assert 'Bar.subclass_method_2' in profiler.calls_count
-        assert 'Bar.subclass_method_3' in profiler.calls_count
+
+    subcall = profiler.call_graph["Foo.calling_subclass_method"]["children"]
+    assert 'Bar.subclass_method_1' in subcall
+    assert 'Bar.subclass_method_2' in subcall
+    assert 'Bar.subclass_method_3' in subcall

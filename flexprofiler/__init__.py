@@ -12,5 +12,5 @@ For advanced usage import and instantiate ``FlexProfiler`` directly from
 from .default_profiler import track, track_all, stats
 from .profiler import FlexProfiler
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = ["track", "track_all", "stats", "FlexProfiler"]
