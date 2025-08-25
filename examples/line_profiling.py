@@ -7,7 +7,7 @@ import time
 from flexprofiler import track, stats
 
 
-@track(lines=True)
+@track(lines=True)  # with line tracking
 def bar(n):
     total = 0
     for i in range(n):
@@ -18,10 +18,15 @@ def bar(n):
             time.sleep(0.0005)
     return total
 
-@track()
+@track()  # no line tracking
+def baz():
+    time.sleep(0.1)
+
+@track()  # no line tracking
 def foo():
     for _ in range(3):
         bar(50)
+    baz()
 
 if __name__ == "__main__":
     foo()
