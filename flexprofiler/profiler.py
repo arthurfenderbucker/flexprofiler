@@ -17,6 +17,8 @@ import time
 import statistics
 import inspect
 import sys
+import re
+import types
 
 
 # Color gradient from green (fast) to red (slow)
@@ -110,6 +112,30 @@ def get_spacer(before_spacer, max_length):
     spacer = "─" * (max_length + 3 - len(before_spacer))
 
     return spacer
+
+def _matches_any(name, patterns):
+    if not patterns:
+        return False
+    for pat in patterns:
+        try:
+            if pat.search(name):
+                return True
+        except Exception:
+            # If pattern fails for some reason, ignore
+            continue
+    return False
+
+# Compile include/exclude into regex patterns for flexible matching (strings or regexes)
+def _compile_patterns(pats):
+    if pats is None:
+        return None
+    compiled = []
+    for p in pats:
+        if isinstance(p, re.Pattern):
+            compiled.append(p)
+        else:
+            compiled.append(re.compile(str(p)))
+    return compiled
 
 
 class FlexProfiler:
@@ -253,16 +279,53 @@ class FlexProfiler:
             and call-graph information according to the profiler configuration.
         """
 
+        # Preprocess include/exclude into matchers that support exact strings,
+        # regex strings and compiled re.Pattern objects.
+        def _build_matchers(seq):
+            if seq is None:
+                return None
+            matchers = []
+            for item in seq:
+                # Compiled pattern
+                if hasattr(item, "search") and callable(item.search):
+                    matchers.append(("regex", item))
+                elif isinstance(item, str) and any(ch in item for ch in ".^$*+?[](){}|\\"):
+                    # Treat strings containing regex metacharacters as regex
+                    matchers.append(("regex", re.compile(item)))
+                else:
+                    matchers.append(("exact", item))
+            return matchers
+
+        include_matchers = _build_matchers(include)
+        exclude_matchers = _build_matchers(exclude)
+
         def decorator(inner_func):
             def _track_wrapper(*args, **kwargs):
                 func_name_base = inner_func.__name__
-                # Handle include/exclude logic
-                if include is not None and func_name_base not in include:
-                    return inner_func(*args, **kwargs)
-                if exclude is not None and func_name_base in exclude:
-                    return inner_func(*args, **kwargs)
+                # Handle include/exclude logic using matchers
+                if include_matchers is not None:
+                    allowed = False
+                    for typ, m in include_matchers:
+                        if typ == "exact" and func_name_base == m:
+                            allowed = True
+                            break
+                        if typ == "regex" and m.search(func_name_base):
+                            allowed = True
+                            break
+                    if not allowed:
+                        return inner_func(*args, **kwargs)
+
+                if exclude_matchers is not None:
+                    for typ, m in exclude_matchers:
+                        if typ == "exact" and func_name_base == m:
+                            return inner_func(*args, **kwargs)
+                        if typ == "regex" and m.search(func_name_base):
+                            return inner_func(*args, **kwargs)
                 level = len(self.call_queue)
-                is_arg_sensitive = arg_sensitive and (func_name_base in arg_sensitive)
+                if isinstance(arg_sensitive, bool):
+                    is_arg_sensitive = arg_sensitive
+                else: # list of arg names
+                    is_arg_sensitive = arg_sensitive and (func_name_base in arg_sensitive)
                 if level < max_depth:
                     # Determine whether this is a bound method by checking the
                     # wrapped function signature: treat as method only when
@@ -277,7 +340,7 @@ class FlexProfiler:
                     if params and params[0] == "self" and args:
                         key_base = f"{args[0].__class__.__name__}.{func_name_base}"
                     else:
-                        key_base = func_name_base
+                        key_base = getattr(inner_func,"__qualname__", func_name_base)
                     if is_arg_sensitive:
                         sig = inspect.signature(inner_func)
                         bound_args = sig.bind(*args, **kwargs)
@@ -398,7 +461,7 @@ class FlexProfiler:
         else:
             return decorator(func)
 
-    def _stats(self, call_graph, depth=0, is_last_list=[], unit: str = "s"):
+    def _stats(self, call_graph, depth=0, is_last_list=[], unit: str = "s", simple=False):
         """Return a list of formatted (left, right) column tuples for printing.
 
         The helper prepares the strings for each node in the nested
@@ -418,7 +481,8 @@ class FlexProfiler:
             Booleans used to determine connector characters for ancestors.
         unit : str
             The time unit to use for displaying timings (e.g., "m", "s", "ms", "us").
-
+        simple : bool
+            Display graph nodes stats as a simple list.   
         Returns
         -------
         list[tuple[str, str]]
@@ -505,25 +569,27 @@ class FlexProfiler:
 
         return lines_content
 
-    def stats(self, unit: str = "ms"):
+    def stats(self, unit: str = "ms", simple=False):
         """Print either a simple flat report or a detailed call-graph report.
 
         Parameters
         ----------
         unit : str (default: "ms")
             The time unit to use for displaying timings (e.g., "m", "s", "ms", "us").
+        simple: bool (default: False)
+            Display the statistics in a simple list format instead of a tree like structure
         """
         if not self.detailed:
             print(
-                "Detailed statistics are not enabled. Set `detailed=True` when initializing FlexProfiler."
+                "Detailed statistics are not enabled. Set `detailed=True` when initializing FlexProfiler. Displaying in a simple list mode"
             )
-            return
+            simple = True
         print("Detailed Function Call Statistics:")
         # display the call graph recursively
 
-        lines_content = self._stats(self.call_graph, unit=unit)
+        lines_content = self._stats(self.call_graph, unit=unit, simple=simple)
 
-        max_length = max([len(before_spacer) for before_spacer, _ in lines_content])
+        max_length = max([len(before_spacer) for before_spacer, _ in lines_content]) if len(lines_content) > 0 else 0
         for before_spacer, after_spacer in lines_content:
             spacer = get_spacer(before_spacer, max_length)
             line = f"{before_spacer}{spacer}{after_spacer}"
@@ -544,14 +610,57 @@ class FlexProfiler:
             decorator.
         """
 
+        include_patterns = _compile_patterns(include)
+        exclude_patterns = _compile_patterns(exclude)
+
         def decorate(cls):
-            for attr_name, attr_value in cls.__dict__.items():
+            # If the class name explicitly matches an exclude pattern, skip decorating it
+            key = getattr(cls, "__class__", cls).__name__
+            if _matches_any(key, exclude_patterns):
+                return cls
+
+            # If the class name matches include, we will include all its methods
+            class_included = _matches_any(key, include_patterns)
+
+            # When class_included is True, we will not propagate include/exclude to recursive
+            # instances of this class (per user request).
+            orig_init = getattr(cls, "__init__", None)
+
+            # If the whole class was included by name, we should not
+            # propagate instance-level include/exclude filters to the
+            # per-instance `track` decorator; decorate all methods.
+            track_include = None if class_included else include
+            track_exclude = None if class_included else exclude
+            
+            for attr_name in dir(cls):
+                attr_value = getattr(cls, attr_name)
+                if attr_name == "__init__":
+                    # propagate tracking to all sub classes recursively
+                    def new_init(instance, *args, **kwargs):
+                        if orig_init:
+                            orig_init(instance, *args, **kwargs)
+                        self.track_instance(
+                            instance,
+                            max_depth=max_depth,
+                            arg_sensitive=arg_sensitive,
+                            include=track_include,
+                            exclude=track_exclude,
+                        )
+                    setattr(cls, "__init__", new_init)
+
+                if attr_name.startswith("__"):
+                    continue
+                
                 if callable(attr_value) and attr_value.__name__ != "_track_wrapper":
                     method_name = attr_name
-                    if include is not None and method_name not in include:
-                        continue
-                    if exclude is not None and method_name in exclude:
-                        continue
+                    # If the class was included by name, do not filter methods
+                    if not class_included:
+                        # Method-level include/exclude via regex matching
+                        if include_patterns is not None and not _matches_any(method_name, include_patterns):
+                            continue
+                        if exclude_patterns is not None and _matches_any(method_name, exclude_patterns):
+                            continue
+                    
                     setattr(
                         cls,
                         attr_name,
@@ -559,39 +668,207 @@ class FlexProfiler:
                             attr_value,
                             max_depth=max_depth,
                             arg_sensitive=arg_sensitive,
-                            include=include,
-                            exclude=exclude,
+                            include=track_include,
+                            exclude=track_exclude,
                         ),
                     )
-
-            orig_init = getattr(cls, "__init__", None)
-
-            def new_init(instance, *args, **kwargs):
-                if orig_init:
-                    orig_init(instance, *args, **kwargs)
-                for attr in dir(instance):
-                    if attr.startswith("__"):
-                        continue
-                    value = getattr(instance, attr)
-                    if hasattr(value, "__class__") and hasattr(
-                        value.__class__, "__module__"
-                    ):
-                        if not value.__class__.__module__.startswith("builtins"):
-                            if not getattr(value, "_task_tracker_decorated", False):
-                                self.track_all(
-                                    max_depth=max_depth,
-                                    arg_sensitive=arg_sensitive,
-                                    include=include,
-                                    exclude=exclude,
-                                )(value.__class__)
-                                setattr(value, "_task_tracker_decorated", True)
-
-            setattr(cls, "__init__", new_init)
+                    continue
+            
             return cls
 
         return decorate
 
+    def track_instance(self, instance=None, max_depth=5, arg_sensitive=None, include=None, exclude=None, depth=0, lines=False):
+        if instance is None: # return decorator
+            def decorate(func):
+                return self.track_instance(func, max_depth=max_depth, arg_sensitive=arg_sensitive, include=include, exclude=exclude, depth=depth, lines=lines)
+            return decorate
+        if depth > max_depth:
+            return instance
+        include_patterns = _compile_patterns(include)
+        exclude_patterns = _compile_patterns(exclude)
+    
+        # check if instance is a class
+        is_class = isinstance(instance, type)
 
+        key = getattr(instance, "__name__", instance.__class__.__name__)
+        if _matches_any(key, exclude_patterns):
+            return instance
+        
+        key_in_include = _matches_any(key, include_patterns)
+
+        next_include = include if not key_in_include else None
+        if not is_class and callable(instance) and not getattr(instance, "_task_tracker_decorated", False):
+            # If the class was included by name, do not filter methods
+            # Method-level include/exclude via regex matching
+            skip = False
+            if include_patterns is not None and not key_in_include:
+                skip = True
+
+            if not skip:
+                instance = self.track(
+                            instance,
+                            max_depth=max_depth,
+                            arg_sensitive=arg_sensitive,
+                            include=include,
+                            exclude=exclude,
+                            lines=lines
+                )
+
+        for attr in dir(instance):
+            value = getattr(instance, attr)
+            is_function = isinstance(value, (types.FunctionType, types.MethodType))
+            if attr == "__init__" and is_class:
+                original_init = value
+                # propagate tracking to all sub classes recursively
+                def new_init(this, *args, **kwargs):
+                    # Call the original __init__ whether it's a function
+                    # descriptor (unbound) or a bound method. Then propagate
+                    # tracking to the newly-initialized object.
+                    try:
+                        # Common case: original_init expects the instance as
+                        # first argument.
+                        original_init(this, *args, **kwargs)
+                    except TypeError:
+                        # Fallback: original_init may be a bound method where
+                        # 'this' is already bound, so call without passing it.
+                        original_init(*args, **kwargs)
+
+                    self.track_instance(
+                        this,
+                        max_depth=max_depth,
+                        arg_sensitive=arg_sensitive,
+                        include=next_include,
+                        exclude=exclude,
+                        lines=lines,
+                    )
+
+                # Prefer setting __init__ on the class object to avoid the
+                # "method object attribute '__init__' is read-only" error
+                # which occurs when attempting to overwrite a bound method on
+                # an instance. If `instance` is a class, set directly; when
+                # it's an object, set on its class.
+                target = instance if is_class else getattr(instance, "__class__", None)
+                try:
+                    if target is not None:
+                        setattr(target, "__init__", new_init)
+                    else:
+                        setattr(instance, "__init__", new_init)
+                except Exception:
+                    # Best-effort: if we cannot patch __init__, skip it.
+                    pass
+            if attr.startswith("__"):
+                continue
+            if not (hasattr(value, "__class__") and hasattr(
+                value.__class__, "__module__"
+            )):
+                continue
+            # filter all attributes that are not functions, methods or custom objects
+
+            if not is_function:
+                
+                # Skip builtin-typed objects
+                try:
+                    mod = value.__class__.__module__
+                except Exception:
+                    continue
+                if mod.startswith("builtins"):
+                    continue
+
+            if getattr(value, "__name__", None) == "_track_wrapper":
+                continue
+
+            if getattr(value, "_task_tracker_decorated", False):
+                continue
+
+            value = self.track_instance(value, max_depth=max_depth,
+                arg_sensitive=arg_sensitive,
+                include=next_include,
+                exclude=exclude,
+                depth = depth+1)
+            
+            setattr(instance, attr, value)
+
+        if is_class:
+            setattr(instance, "_task_tracker_decorated", True)
+
+        return instance
+
+            # # Recursively traverse reachable non-builtin, non-callable attributes
+            # # using a stack to support arbitrary depth while avoiding cycles.
+            # # We carry an `ancestor_included` flag so that once a class
+            # # matched `include_patterns` we propagate full decoration to
+            # # all its descendants.
+            # stack = [(value, class_included)]
+            # visited = set()
+            
+
+            # while stack:
+            #     obj, ancestor_included = stack.pop()
+            #     oid = id(obj)
+            #     if oid in visited:
+            #         continue
+            #     visited.add(oid)
+
+            #     # Skip builtin-typed objects
+            #     try:
+            #         mod = obj.__class__.__module__
+            #     except Exception:
+            #         continue
+            #     if mod.startswith("builtins"):
+            #         continue
+
+            #     # If already marked on this instance, skip
+            #     if getattr(obj, "_task_tracker_decorated", False):
+            #         continue
+
+            #     # Mark instance to avoid revisiting and cycles
+            #     try:
+            #         setattr(obj, "_task_tracker_decorated", True)
+            #     except Exception:
+            #         # If attribute can't be set, skip decorating this object
+            #         continue
+
+            #     # Decide recursive decoration args for this object's class
+            #     try:
+            #         # If an ancestor was included OR this target class
+            #         # itself matches include_patterns, decorate fully
+            #         if ancestor_included or (
+            #             _matches_any(obj.__class__.__name__, include_patterns)
+            #             and not _matches_any(obj.__class__.__name__, exclude_patterns)
+            #         ):
+            #             rec_args = dict(max_depth=max_depth, arg_sensitive=arg_sensitive, include=None, exclude=None)
+            #         else:
+            #             rec_args = dict(max_depth=max_depth, arg_sensitive=arg_sensitive, include=include, exclude=exclude)
+                    
+            #         # Decorate the object's class so future instances are instrumented.
+            #         self.track_all(**rec_args)(obj.__class__)
+            #     except Exception:
+            #         # Defensive: ignore any errors decorating the class
+            #         rec_args = dict(max_depth=max_depth, arg_sensitive=arg_sensitive, include=include, exclude=exclude)
+
+            #     # Push child attributes for further traversal. When enqueueing
+            #     # children, propagate ancestor_included if rec_args requested
+            #     # full decoration (include=None) so descendants are fully decorated.
+            #     for sub_attr in dir(obj):
+            #         if sub_attr.startswith("__"):
+            #             continue
+            #         try:
+            #             sub_val = getattr(obj, sub_attr)
+            #         except Exception:
+            #             continue
+            #         # Skip callables (methods/functions) and builtins
+            #         if callable(sub_val):
+            #             continue
+            #         try:
+            #             if sub_val.__class__.__module__.startswith("builtins"):
+            #                 continue
+            #         except Exception:
+            #             continue
+            #         # Enqueue for traversal with updated ancestor flag
+            #         if id(sub_val) not in visited:
+            #             child_ancestor = ancestor_included or (rec_args.get("include") is None)
+            #             stack.append((sub_val, child_ancestor))
 if __name__ == "__main__":
     # Example usage
     task_tracker = FlexProfiler(detailed=True, record_each_call=True)

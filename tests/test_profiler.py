@@ -4,7 +4,7 @@ from flexprofiler import FlexProfiler
 
 def test_simple_func_stats():
     profiler = FlexProfiler(detailed=True, record_each_call=True)
-    @profiler.track
+    @profiler.track_instance
     def simple_func():
         for i in range(2):
             time.sleep(0.01)
@@ -19,7 +19,7 @@ def test_simple_func_stats():
 
 def test_class_tracking():
     profiler = FlexProfiler(detailed=True, record_each_call=True)
-    @profiler.track_all(max_depth=3)
+    @profiler.track_instance(max_depth=3)
     class Foo:
         def __init__(self):
             self.sub_class = Bar()

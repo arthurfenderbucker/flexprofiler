@@ -5,7 +5,7 @@ from flexprofiler import FlexProfiler
 def test_line_level_tracking():
     profiler = FlexProfiler(detailed=False, record_each_call=True)
 
-    @profiler.track(lines=True)
+    @profiler.track_instance(lines=True)
     def foo(x):
         a = x + 1
         time.sleep(0.01)
