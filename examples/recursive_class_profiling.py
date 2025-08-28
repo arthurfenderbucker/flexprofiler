@@ -1,8 +1,8 @@
-"""Recursive class profiling example — demonstrates recursively tracking methods in nested/instantiated classes using @track_all(max_depth=...)."""
+"""Recursive class profiling example — demonstrates recursively tracking methods in nested/instantiated classes using @track(max_depth=...)."""
 import time
-from flexprofiler import track_instance, stats
+from flexprofiler import track, stats
 
-@track_instance(max_depth=3)  # Use the max_depth parameter to limit the depth of profiling
+@track(max_depth=3)  # Use the max_depth parameter to limit the depth of profiling
 class Foo:
     def __init__(self):
         self.sub_class = Bar()  # Any class instantiated in the __init__ will be recursively tracked

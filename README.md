@@ -22,7 +22,7 @@ This approach makes it easy to identify bottlenecks and optimize your code effic
 
 - `@track()` - decorate a function to collect call counts and timing statistics. Args:
     - `lines`: boolean, collect per-line timing inside the function.
-- `@track_all()` - Decorate a class to profile all its methods. Args:
+- `@track()` - Decorate a class to profile all its methods. Args:
     - `max_depth`: integer, how deep to recursively profile composed objects (default: 10).
     - `include`: list of method names to track (default: None to track all).
     - `exclude`: list of method names to skip (default: None to skip none).
@@ -59,13 +59,13 @@ output:
 
 ### 2. Tracking All Methods in a Class
 
-Class profiling example — demonstrates using @track_all to profile all methods of a class.
+Class profiling example — demonstrates using @track to profile all methods of a class.
 
 ```python
 import time
-from flexprofiler import track_all, stats
+from flexprofiler import track, stats
 
-@track_all()  # Use @track_all() decorator to profile all methods in the class
+@track()  # Use @track() decorator to profile all methods in the class
 class Foo:
     def example_method(self):
         self.another_method()
@@ -86,13 +86,13 @@ output:
 
 ### 3. Tracking All Methods in a Class Recursively
 
-Recursive class profiling example — demonstrates recursively tracking methods in nested/instantiated classes using @track_all(max_depth=...).
+Recursive class profiling example — demonstrates recursively tracking methods in nested/instantiated classes using @track(max_depth=...).
 
 ```python
 import time
-from flexprofiler import track_all, stats
+from flexprofiler import track, stats
 
-@track_all(max_depth=3)
+@track(max_depth=3)
 class Foo:
     def __init__(self):
         self.sub_class = Bar()

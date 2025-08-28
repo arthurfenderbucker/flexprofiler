@@ -53,7 +53,7 @@ def test_include_single_function(capsys):
 	# include only Baz. Define and decorate Foo locally so instrumentation is isolated.
 	profiler = FlexProfiler(detailed=True, record_each_call=True)
 
-	@profiler.track_instance(include=["Baz"], max_depth=5)
+	@profiler.track(include=["Baz"], max_depth=5)
 	class LocalFoo:
 		def __init__(self):
 			self.bar = Bar()
@@ -77,10 +77,10 @@ def test_include_single_function(capsys):
 
 def test_include_multiple_and_class_names(capsys):
 	# Now test include with multiple names and a class name via applying decorator dynamically
-	# Apply track_all to a new class to include Qux and func_b pattern
+	# Apply track to a new class to include Qux and func_b pattern
 	profiler = FlexProfiler(detailed=True, record_each_call=True)
 
-	@profiler.track_instance(include=[r"func_b", "Qux"], max_depth=5)
+	@profiler.track(include=[r"func_b", "Qux"], max_depth=5)
 	class LocalFoo2:
 		def __init__(self):
 			self.bar = Bar()
@@ -102,7 +102,7 @@ def test_include_multiple_and_class_names(capsys):
 def test_exclude_behavior(capsys):
 	# Test exclude: methods in excluded classes should not appear
 	profiler = FlexProfiler(detailed=True, record_each_call=True)
-	@profiler.track_instance(exclude=["Qux"], max_depth=5)
+	@profiler.track(exclude=["Qux"], max_depth=5)
 	class LocalRoot:
 		def __init__(self):
 			self.bar = Bar()
@@ -125,7 +125,7 @@ def test_include_exclude_with_regex_strings_and_compiled_patterns(capsys):
 	profiler = FlexProfiler(detailed=True, record_each_call=True)
 
 	# Use regex string to include methods named func_.* and exclude class name Qux
-	@profiler.track_instance(include=[r"func_.*"], exclude=[r"Qux"], max_depth=5)
+	@profiler.track(include=[r"func_.*"], exclude=[r"Qux"], max_depth=5)
 	class LocalFooRegexStr:
 		def __init__(self):
 			self.bar = Bar()

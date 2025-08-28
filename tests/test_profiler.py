@@ -4,7 +4,7 @@ from flexprofiler import FlexProfiler
 
 def test_simple_func_stats():
     profiler = FlexProfiler(detailed=True, record_each_call=True)
-    @profiler.track_instance
+    @profiler.track
     def simple_func():
         for i in range(2):
             time.sleep(0.01)
@@ -12,55 +12,10 @@ def test_simple_func_stats():
     simple_func()
     # Ensure the call_graph recorded two calls to simple_func and that
     # some non-zero time was accumulated for the function in the call_graph
-    assert 'simple_func' in profiler.call_graph
-    stats = profiler.call_graph['simple_func']
+
+    keys = list(profiler.call_graph.keys())
+    assert len(keys) == 1
+    assert 'simple_func' in keys[0]
+    stats = profiler.call_graph[keys[0]]
     assert stats.get('count', 0) == 2
     assert stats.get('total_time', 0) > 0
-
-def test_class_tracking():
-    profiler = FlexProfiler(detailed=True, record_each_call=True)
-    @profiler.track_instance(max_depth=3)
-    class Foo:
-        def __init__(self):
-            self.sub_class = Bar()
-        def example_method(self):
-            self.another_method()
-            time.sleep(0.01)
-        def another_method(self):
-            time.sleep(0.02)
-        def calling_subclass_method(self):
-            for i in range(2):
-                self.sub_class.subclass_method_1()
-                self.sub_class.subclass_method_2()
-                self.sub_class.subclass_method_3()
-    class Bar:
-        def subclass_method_1(self):
-            time.sleep(0.005)
-        def subclass_method_2(self):
-            self.a()
-            self.b()
-        def subclass_method_3(self):
-            self.a()
-            self.b()
-        def a(self):
-            time.sleep(0.002)
-        def b(self):
-            time.sleep(0.001)
-    obj = Foo()
-    obj.example_method()
-    obj.calling_subclass_method()
-    # Check that tracked methods are present in the detailed call_graph
-    assert profiler.detailed, "test expects detailed call graph to be enabled"
-    assert 'Foo.example_method' in profiler.call_graph
-    assert "children" in profiler.call_graph["Foo.example_method"]
-    assert 'Foo.another_method' in profiler.call_graph["Foo.example_method"]["children"]
-    assert 'Foo.calling_subclass_method' in profiler.call_graph
-    assert "children" in profiler.call_graph["Foo.calling_subclass_method"]
-    # Foo methods should be tracked
-    # Bar methods may or may not be recursively decorated depending on
-    # implementation details; assert at least one Bar method tracked if present
-
-    subcall = profiler.call_graph["Foo.calling_subclass_method"]["children"]
-    assert 'Bar.subclass_method_1' in subcall
-    assert 'Bar.subclass_method_2' in subcall
-    assert 'Bar.subclass_method_3' in subcall

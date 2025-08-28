@@ -1,8 +1,8 @@
-"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track_all."""
-from flexprofiler import track_all, stats, track_instance
+"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track."""
+from flexprofiler import stats, track
 import time
 
-# @track_instance
+# @track
 class Foo:
     def __init__(self):
         self.bar = Bar()
@@ -19,14 +19,14 @@ class Bar:
         time.sleep(0.03)
 
 foo = Foo()
-foo = track_instance(foo)
+foo = track(foo)
 foo.func_a()
 
-# @track_instance 
+# @track 
 def f(i=0):
     time.sleep(0.02)
     
-f = track_instance(f)
+f = track(f)
 f(1)
 
 stats()

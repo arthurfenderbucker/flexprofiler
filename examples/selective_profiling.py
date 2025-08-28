@@ -1,9 +1,9 @@
-"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track_all."""
-from flexprofiler import track_all, stats
+"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track."""
+from flexprofiler import track, stats
 import time
 
 # Example 1: Using 'include' to only profile selected methods
-@track_all(include=["foo", "bar"])
+@track(include=["foo", "bar"])
 class MyClassInclude:
     def foo(self):
         time.sleep(0.05)
@@ -23,7 +23,7 @@ print("\nStats with include=['foo', 'bar'] (baz is not tracked):")
 stats()
 
 # Example 2: Using 'exclude' to skip selected methods
-@track_all(exclude=["bar"])
+@track(exclude=["bar"])
 class MyClassExclude:
     def foo(self):
         time.sleep(0.05)

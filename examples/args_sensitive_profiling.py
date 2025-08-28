@@ -1,9 +1,9 @@
 """Argument-sensitive profiling example — demonstrates grouping/profile keys by argument values using arg_sensitive."""
-from flexprofiler import track_instance, stats
+from flexprofiler import track, stats
 import time
 
 # Simple Example: Track a single function with arg_sensitive
-@track_instance(arg_sensitive=True)
+@track(arg_sensitive=True)
 def foo(x):
     time.sleep(0.05 * x)
     return x * 2
@@ -17,7 +17,7 @@ print("Simple Example Stats:")
 stats()
 
 # Complex Example: Track methods in a class with arg_sensitive
-@track_instance(arg_sensitive=["bar", "baz"])
+@track(arg_sensitive=["bar", "baz"])
 class MyClass:
     def bar(self, a):
         time.sleep(0.01 * a)

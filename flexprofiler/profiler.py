@@ -113,6 +113,7 @@ def get_spacer(before_spacer, max_length):
 
     return spacer
 
+
 def _matches_any(name, patterns):
     if not patterns:
         return False
@@ -124,6 +125,7 @@ def _matches_any(name, patterns):
             # If pattern fails for some reason, ignore
             continue
     return False
+
 
 # Compile include/exclude into regex patterns for flexible matching (strings or regexes)
 def _compile_patterns(pats):
@@ -230,16 +232,8 @@ class FlexProfiler:
             if self.record_each_call:
                 call_graph[call_queue[0]]["exec_log"] += [elapsed_time]
 
-    def track(
-        self,
-        func=None,
-        *,
-        max_depth=10,
-        arg_sensitive=None,
-        include=None,
-        exclude=None,
-        lines=False,
-    ):
+
+    def wrap(self, inner_func, max_depth=10, arg_sensitive=None, lines=False):
         """Decorator factory to measure execution time of functions.
 
         Can be used either with or without arguments::
@@ -278,190 +272,150 @@ class FlexProfiler:
             A decorator that wraps the target function and records timing
             and call-graph information according to the profiler configuration.
         """
+        def _track_wrapper(*args, **kwargs):
+            func_name_base = inner_func.__name__
+            # Handle include/exclude logic using matchers
 
-        # Preprocess include/exclude into matchers that support exact strings,
-        # regex strings and compiled re.Pattern objects.
-        def _build_matchers(seq):
-            if seq is None:
-                return None
-            matchers = []
-            for item in seq:
-                # Compiled pattern
-                if hasattr(item, "search") and callable(item.search):
-                    matchers.append(("regex", item))
-                elif isinstance(item, str) and any(ch in item for ch in ".^$*+?[](){}|\\"):
-                    # Treat strings containing regex metacharacters as regex
-                    matchers.append(("regex", re.compile(item)))
+            level = len(self.call_queue)
+            if isinstance(arg_sensitive, bool):
+                is_arg_sensitive = arg_sensitive
+            else:  # list of arg names
+                is_arg_sensitive = arg_sensitive and (
+                    func_name_base in arg_sensitive
+                )
+            if level < max_depth:
+                # Determine whether this is a bound method by checking the
+                # wrapped function signature: treat as method only when
+                # the first parameter is named 'self' and an argument was
+                # provided.
+                try:
+                    sig = inspect.signature(inner_func)
+                    params = list(sig.parameters.keys())
+                except Exception:
+                    params = []
+
+                if params and params[0] == "self" and args:
+                    key_base = f"{args[0].__class__.__name__}.{func_name_base}"
                 else:
-                    matchers.append(("exact", item))
-            return matchers
+                    key_base = getattr(inner_func, "__qualname__", func_name_base)
+                if is_arg_sensitive:
+                    sig = inspect.signature(inner_func)
+                    bound_args = sig.bind(*args, **kwargs)
+                    bound_args.apply_defaults()
+                    args_str = ", ".join(
+                        f"{name}={value!r}"
+                        for name, value in bound_args.arguments.items()
+                        if name != "self"
+                    )
+                    key_args = f"{key_base}({args_str})"
+                    key = key_args
+                else:
+                    key = key_base
+                self.call_queue.append(key)
 
-        include_matchers = _build_matchers(include)
-        exclude_matchers = _build_matchers(exclude)
+                # Option A: line-by-line tracing enabled
+                if lines:
+                    import linecache
 
-        def decorator(inner_func):
-            def _track_wrapper(*args, **kwargs):
-                func_name_base = inner_func.__name__
-                # Handle include/exclude logic using matchers
-                if include_matchers is not None:
-                    allowed = False
-                    for typ, m in include_matchers:
-                        if typ == "exact" and func_name_base == m:
-                            allowed = True
-                            break
-                        if typ == "regex" and m.search(func_name_base):
-                            allowed = True
-                            break
-                    if not allowed:
-                        return inner_func(*args, **kwargs)
+                    target_code = inner_func.__code__
+                    # Per-call temporary storage for this invocation
+                    curr_frame_states = {}
 
-                if exclude_matchers is not None:
-                    for typ, m in exclude_matchers:
-                        if typ == "exact" and func_name_base == m:
-                            return inner_func(*args, **kwargs)
-                        if typ == "regex" and m.search(func_name_base):
-                            return inner_func(*args, **kwargs)
-                level = len(self.call_queue)
-                if isinstance(arg_sensitive, bool):
-                    is_arg_sensitive = arg_sensitive
-                else: # list of arg names
-                    is_arg_sensitive = arg_sensitive and (func_name_base in arg_sensitive)
-                if level < max_depth:
-                    # Determine whether this is a bound method by checking the
-                    # wrapped function signature: treat as method only when
-                    # the first parameter is named 'self' and an argument was
-                    # provided.
-                    try:
-                        sig = inspect.signature(inner_func)
-                        params = list(sig.parameters.keys())
-                    except Exception:
-                        params = []
+                    def _global_tracer(frame, event, arg):
+                        # Only instrument frames that belong to the target function
+                        if frame.f_code is not target_code:
+                            return None
 
-                    if params and params[0] == "self" and args:
-                        key_base = f"{args[0].__class__.__name__}.{func_name_base}"
-                    else:
-                        key_base = getattr(inner_func,"__qualname__", func_name_base)
-                    if is_arg_sensitive:
-                        sig = inspect.signature(inner_func)
-                        bound_args = sig.bind(*args, **kwargs)
-                        bound_args.apply_defaults()
-                        args_str = ", ".join(
-                            f"{name}={value!r}"
-                            for name, value in bound_args.arguments.items()
-                            if name != "self"
-                        )
-                        key_args = f"{key_base}({args_str})"
-                        key = key_args
-                    else:
-                        key = key_base
-                    self.call_queue.append(key)
+                        now = time.perf_counter()
 
-                    # Option A: line-by-line tracing enabled
-                    if lines:
-                        import linecache
+                        if event == "call":
+                            # Initialize tracking state for this frame
+                            curr_frame_states[frame] = {
+                                "last_time": now,
+                                "last_line": frame.f_lineno,
+                            }
+                            return _global_tracer
 
-                        target_code = inner_func.__code__
-                        # Per-call temporary storage for this invocation
-                        curr_frame_states = {}
-
-                        def _global_tracer(frame, event, arg):
-                            # Only instrument frames that belong to the target function
-                            if frame.f_code is not target_code:
-                                return None
-
-                            now = time.perf_counter()
-
-                            if event == "call":
-                                # Initialize tracking state for this frame
+                        if event == "line":
+                            st = curr_frame_states.get(frame)
+                            if st is None:
                                 curr_frame_states[frame] = {
                                     "last_time": now,
                                     "last_line": frame.f_lineno,
                                 }
                                 return _global_tracer
 
-                            if event == "line":
-                                st = curr_frame_states.get(frame)
-                                if st is None:
-                                    curr_frame_states[frame] = {
-                                        "last_time": now,
-                                        "last_line": frame.f_lineno,
-                                    }
-                                    return _global_tracer
-
-                                elapsed = now - st["last_time"]
-                                lineno = st["last_line"]
-                                # Store source line content (strip trailing newline)
-                                src = linecache.getline(
-                                    frame.f_code.co_filename, lineno
-                                ).rstrip("\n")
-                                if src:
-                                    if src.strip()[0] != "@":
-                                        self.line_stats[key][lineno]["content"] = src
-                                        # Accumulate per-line totals for this function key
-                                        self.line_stats[key][lineno]["total_time"] += (
-                                            elapsed
-                                        )
-                                        self.line_stats[key][lineno]["count"] += 1
-                                # Update last seen
-                                st["last_time"] = now
-                                st["last_line"] = frame.f_lineno
-                                # continue tracing this frame
-                                return _global_tracer
-
-                            if event == "return":
-                                st = curr_frame_states.pop(frame, None)
-                                if st is not None:
-                                    elapsed = now - st["last_time"]
-                                    lineno = st["last_line"]
+                            elapsed = now - st["last_time"]
+                            lineno = st["last_line"]
+                            # Store source line content (strip trailing newline)
+                            src = linecache.getline(
+                                frame.f_code.co_filename, lineno
+                            ).rstrip("\n")
+                            if src:
+                                if src.strip()[0] != "@":
+                                    self.line_stats[key][lineno]["content"] = src
+                                    # Accumulate per-line totals for this function key
                                     self.line_stats[key][lineno]["total_time"] += (
                                         elapsed
                                     )
                                     self.line_stats[key][lineno]["count"] += 1
-                                    src = linecache.getline(
-                                        frame.f_code.co_filename, lineno
-                                    ).rstrip("\n")
-                                    if src:
-                                        self.line_stats[key][lineno]["content"] = src
+                            # Update last seen
+                            st["last_time"] = now
+                            st["last_line"] = frame.f_lineno
+                            # continue tracing this frame
+                            return _global_tracer
 
-                                return _global_tracer
+                        if event == "return":
+                            st = curr_frame_states.pop(frame, None)
+                            if st is not None:
+                                elapsed = now - st["last_time"]
+                                lineno = st["last_line"]
+                                self.line_stats[key][lineno]["total_time"] += (
+                                    elapsed
+                                )
+                                self.line_stats[key][lineno]["count"] += 1
+                                src = linecache.getline(
+                                    frame.f_code.co_filename, lineno
+                                ).rstrip("\n")
+                                if src:
+                                    self.line_stats[key][lineno]["content"] = src
 
-                            return None
+                            return _global_tracer
 
-                        prev_tracer = sys.gettrace()
+                        return None
 
-                        try:
-                            sys.settrace(_global_tracer)
-                            start_time = time.perf_counter()
-                            result = inner_func(*args, **kwargs)
-                            end_time = time.perf_counter()
-                        finally:
-                            # Restore previous tracer
-                            sys.settrace(prev_tracer)
+                    prev_tracer = sys.gettrace()
 
-                    else:
+                    try:
+                        sys.settrace(_global_tracer)
                         start_time = time.perf_counter()
                         result = inner_func(*args, **kwargs)
                         end_time = time.perf_counter()
+                    finally:
+                        # Restore previous tracer
+                        sys.settrace(prev_tracer)
 
-                    elapsed_time = end_time - start_time
-
-                    if self.detailed:
-                        self._update_call_graph(
-                            self.call_graph, self.call_queue, elapsed_time
-                        )
-                    self.call_queue.pop()
                 else:
+                    start_time = time.perf_counter()
                     result = inner_func(*args, **kwargs)
-                return result
+                    end_time = time.perf_counter()
 
-            return _track_wrapper
+                elapsed_time = end_time - start_time
 
-        if func is None:
-            return decorator
-        else:
-            return decorator(func)
+                if self.detailed:
+                    self._update_call_graph(
+                        self.call_graph, self.call_queue, elapsed_time
+                    )
+                self.call_queue.pop()
+            else:
+                result = inner_func(*args, **kwargs)
+            return result
 
-    def _stats(self, call_graph, depth=0, is_last_list=[], unit: str = "s", simple=False):
+        return _track_wrapper
+
+    def _stats(
+        self, call_graph, depth=0, is_last_list=[], unit: str = "s", simple=False
+    ):
         """Return a list of formatted (left, right) column tuples for printing.
 
         The helper prepares the strings for each node in the nested
@@ -482,7 +436,7 @@ class FlexProfiler:
         unit : str
             The time unit to use for displaying timings (e.g., "m", "s", "ms", "us").
         simple : bool
-            Display graph nodes stats as a simple list.   
+            Display graph nodes stats as a simple list.
         Returns
         -------
         list[tuple[str, str]]
@@ -589,116 +543,60 @@ class FlexProfiler:
 
         lines_content = self._stats(self.call_graph, unit=unit, simple=simple)
 
-        max_length = max([len(before_spacer) for before_spacer, _ in lines_content]) if len(lines_content) > 0 else 0
+        max_length = (
+            max([len(before_spacer) for before_spacer, _ in lines_content])
+            if len(lines_content) > 0
+            else 0
+        )
         for before_spacer, after_spacer in lines_content:
             spacer = get_spacer(before_spacer, max_length)
             line = f"{before_spacer}{spacer}{after_spacer}"
             print(line)
 
-    def track_all(self, max_depth=5, arg_sensitive=None, include=None, exclude=None):
-        """Class decorator that applies ``track`` to all suitable methods.
+    def track(
+        self,
+        instance=None,
+        max_depth=5,
+        arg_sensitive=None,
+        include=None,
+        exclude=None,
+        depth=0,
+        lines=False,
+    ):
+        if instance is None:  # return decorator
 
-        This convenience decorator iterates over attributes defined on the
-        class and replaces callables with their tracked equivalents. It also
-        wraps ``__init__`` so that instances created afterwards will have
-        any non-builtins attribute classes recursively decorated as well.
-
-        Parameters
-        ----------
-        max_depth, arg_sensitive, include, exclude
-            Same semantics as :meth:`track` and forwarded to each applied
-            decorator.
-        """
-
-        include_patterns = _compile_patterns(include)
-        exclude_patterns = _compile_patterns(exclude)
-
-        def decorate(cls):
-            # If the class name explicitly matches an exclude pattern, skip decorating it
-            key = getattr(cls, "__class__", cls).__name__
-            if _matches_any(key, exclude_patterns):
-                return cls
-
-            # If the class name matches include, we will include all its methods
-            class_included = _matches_any(key, include_patterns)
-
-            # When class_included is True, we will not propagate include/exclude to recursive
-            # instances of this class (per user request).
-            orig_init = getattr(cls, "__init__", None)
-
-            # If the whole class was included by name, we should not
-            # propagate instance-level include/exclude filters to the
-            # per-instance `track` decorator; decorate all methods.
-            track_include = None if class_included else include
-            track_exclude = None if class_included else exclude
-            
-            for attr_name in dir(cls):
-                attr_value = getattr(cls, attr_name)
-                if attr_name == "__init__":
-                    # propagate tracking to all sub classes recursively
-                    def new_init(instance, *args, **kwargs):
-                        if orig_init:
-                            orig_init(instance, *args, **kwargs)
-                        self.track_instance(
-                            instance,
-                            max_depth=max_depth,
-                            arg_sensitive=arg_sensitive,
-                            include=track_include,
-                            exclude=track_exclude,
-                        )
-                    setattr(cls, "__init__", new_init)
-
-                if attr_name.startswith("__"):
-                    continue
-                
-                if callable(attr_value) and attr_value.__name__ != "_track_wrapper":
-                    method_name = attr_name
-                    # If the class was included by name, do not filter methods
-                    if not class_included:
-                        # Method-level include/exclude via regex matching
-                        if include_patterns is not None and not _matches_any(method_name, include_patterns):
-                            continue
-                        if exclude_patterns is not None and _matches_any(method_name, exclude_patterns):
-                            continue
-                    
-                    setattr(
-                        cls,
-                        attr_name,
-                        self.track(
-                            attr_value,
-                            max_depth=max_depth,
-                            arg_sensitive=arg_sensitive,
-                            include=track_include,
-                            exclude=track_exclude,
-                        ),
-                    )
-                    continue
-            
-            return cls
-
-        return decorate
-
-    def track_instance(self, instance=None, max_depth=5, arg_sensitive=None, include=None, exclude=None, depth=0, lines=False):
-        if instance is None: # return decorator
             def decorate(func):
-                return self.track_instance(func, max_depth=max_depth, arg_sensitive=arg_sensitive, include=include, exclude=exclude, depth=depth, lines=lines)
+                return self.track(
+                    func,
+                    max_depth=max_depth,
+                    arg_sensitive=arg_sensitive,
+                    include=include,
+                    exclude=exclude,
+                    depth=depth,
+                    lines=lines,
+                )
+
             return decorate
         if depth > max_depth:
             return instance
         include_patterns = _compile_patterns(include)
         exclude_patterns = _compile_patterns(exclude)
-    
+
         # check if instance is a class
         is_class = isinstance(instance, type)
 
         key = getattr(instance, "__name__", instance.__class__.__name__)
         if _matches_any(key, exclude_patterns):
             return instance
-        
+
         key_in_include = _matches_any(key, include_patterns)
 
         next_include = include if not key_in_include else None
-        if not is_class and callable(instance) and not getattr(instance, "_task_tracker_decorated", False):
+        if (
+            not is_class
+            and callable(instance)
+            and not getattr(instance, "_task_tracker_decorated", False)
+        ):
             # If the class was included by name, do not filter methods
             # Method-level include/exclude via regex matching
             skip = False
@@ -706,13 +604,11 @@ class FlexProfiler:
                 skip = True
 
             if not skip:
-                instance = self.track(
-                            instance,
-                            max_depth=max_depth,
-                            arg_sensitive=arg_sensitive,
-                            include=include,
-                            exclude=exclude,
-                            lines=lines
+                instance = self.wrap(
+                    instance,
+                    max_depth=max_depth,
+                    arg_sensitive=arg_sensitive,
+                    lines=lines,
                 )
 
         for attr in dir(instance):
@@ -720,6 +616,7 @@ class FlexProfiler:
             is_function = isinstance(value, (types.FunctionType, types.MethodType))
             if attr == "__init__" and is_class:
                 original_init = value
+
                 # propagate tracking to all sub classes recursively
                 def new_init(this, *args, **kwargs):
                     # Call the original __init__ whether it's a function
@@ -734,7 +631,7 @@ class FlexProfiler:
                         # 'this' is already bound, so call without passing it.
                         original_init(*args, **kwargs)
 
-                    self.track_instance(
+                    self.track(
                         this,
                         max_depth=max_depth,
                         arg_sensitive=arg_sensitive,
@@ -759,14 +656,13 @@ class FlexProfiler:
                     pass
             if attr.startswith("__"):
                 continue
-            if not (hasattr(value, "__class__") and hasattr(
-                value.__class__, "__module__"
-            )):
+            if not (
+                hasattr(value, "__class__") and hasattr(value.__class__, "__module__")
+            ):
                 continue
             # filter all attributes that are not functions, methods or custom objects
 
             if not is_function:
-                
                 # Skip builtin-typed objects
                 try:
                     mod = value.__class__.__module__
@@ -781,12 +677,15 @@ class FlexProfiler:
             if getattr(value, "_task_tracker_decorated", False):
                 continue
 
-            value = self.track_instance(value, max_depth=max_depth,
+            value = self.track(
+                value,
+                max_depth=max_depth,
                 arg_sensitive=arg_sensitive,
                 include=next_include,
                 exclude=exclude,
-                depth = depth+1)
-            
+                depth=depth + 1,
+            )
+
             setattr(instance, attr, value)
 
         if is_class:
@@ -794,81 +693,6 @@ class FlexProfiler:
 
         return instance
 
-            # # Recursively traverse reachable non-builtin, non-callable attributes
-            # # using a stack to support arbitrary depth while avoiding cycles.
-            # # We carry an `ancestor_included` flag so that once a class
-            # # matched `include_patterns` we propagate full decoration to
-            # # all its descendants.
-            # stack = [(value, class_included)]
-            # visited = set()
-            
-
-            # while stack:
-            #     obj, ancestor_included = stack.pop()
-            #     oid = id(obj)
-            #     if oid in visited:
-            #         continue
-            #     visited.add(oid)
-
-            #     # Skip builtin-typed objects
-            #     try:
-            #         mod = obj.__class__.__module__
-            #     except Exception:
-            #         continue
-            #     if mod.startswith("builtins"):
-            #         continue
-
-            #     # If already marked on this instance, skip
-            #     if getattr(obj, "_task_tracker_decorated", False):
-            #         continue
-
-            #     # Mark instance to avoid revisiting and cycles
-            #     try:
-            #         setattr(obj, "_task_tracker_decorated", True)
-            #     except Exception:
-            #         # If attribute can't be set, skip decorating this object
-            #         continue
-
-            #     # Decide recursive decoration args for this object's class
-            #     try:
-            #         # If an ancestor was included OR this target class
-            #         # itself matches include_patterns, decorate fully
-            #         if ancestor_included or (
-            #             _matches_any(obj.__class__.__name__, include_patterns)
-            #             and not _matches_any(obj.__class__.__name__, exclude_patterns)
-            #         ):
-            #             rec_args = dict(max_depth=max_depth, arg_sensitive=arg_sensitive, include=None, exclude=None)
-            #         else:
-            #             rec_args = dict(max_depth=max_depth, arg_sensitive=arg_sensitive, include=include, exclude=exclude)
-                    
-            #         # Decorate the object's class so future instances are instrumented.
-            #         self.track_all(**rec_args)(obj.__class__)
-            #     except Exception:
-            #         # Defensive: ignore any errors decorating the class
-            #         rec_args = dict(max_depth=max_depth, arg_sensitive=arg_sensitive, include=include, exclude=exclude)
-
-            #     # Push child attributes for further traversal. When enqueueing
-            #     # children, propagate ancestor_included if rec_args requested
-            #     # full decoration (include=None) so descendants are fully decorated.
-            #     for sub_attr in dir(obj):
-            #         if sub_attr.startswith("__"):
-            #             continue
-            #         try:
-            #             sub_val = getattr(obj, sub_attr)
-            #         except Exception:
-            #             continue
-            #         # Skip callables (methods/functions) and builtins
-            #         if callable(sub_val):
-            #             continue
-            #         try:
-            #             if sub_val.__class__.__module__.startswith("builtins"):
-            #                 continue
-            #         except Exception:
-            #             continue
-            #         # Enqueue for traversal with updated ancestor flag
-            #         if id(sub_val) not in visited:
-            #             child_ancestor = ancestor_included or (rec_args.get("include") is None)
-            #             stack.append((sub_val, child_ancestor))
 if __name__ == "__main__":
     # Example usage
     task_tracker = FlexProfiler(detailed=True, record_each_call=True)
@@ -882,7 +706,7 @@ if __name__ == "__main__":
     simple_func()
     simple_func()
 
-    @task_tracker.track_all(max_depth=3, arg_sensitive=["subclass_method_2"])
+    @task_tracker.track(max_depth=3, arg_sensitive=["subclass_method_2"])
     class Foo:
         def __init__(self):
             self.sub_class = Bar()

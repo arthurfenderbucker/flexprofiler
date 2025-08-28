@@ -9,8 +9,8 @@ For advanced usage import and instantiate ``FlexProfiler`` directly from
 ``flexprofiler.profiler``.
 """
 
-from .default_profiler import track, track_all, stats, track_instance
+from .default_profiler import  stats, track
 from .profiler import FlexProfiler
 
 __version__ = "0.1.4"
-__all__ = ["track", "track_all", "track_instance", "stats", "FlexProfiler"]
+__all__ = ["track", "stats", "FlexProfiler"]

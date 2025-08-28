@@ -4,16 +4,16 @@ Run this script to see per-line timing collected by decorating a function
 with @track(lines=True).
 """
 import time
-from flexprofiler import track_instance, stats
+from flexprofiler import track, stats
 
 
-@track_instance               # no line tracking
+@track               # no line tracking
 def foo():
     for _ in range(3):
         bar(50)
     baz()
 
-@track_instance(lines=True)  # with line tracking
+@track(lines=True)  # with line tracking
 def bar(n):
     total = 0
     for i in range(n):
@@ -24,7 +24,7 @@ def bar(n):
             time.sleep(0.0005)
     return total
 
-@track_instance               # no line tracking
+@track               # no line tracking
 def baz():
     time.sleep(0.1)
 

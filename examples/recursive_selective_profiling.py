@@ -1,10 +1,11 @@
-"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track_instance."""
-from flexprofiler import track_instance, stats
+"""Selective profiling example — shows how to use include/exclude to profile only specific methods with @track."""
+from flexprofiler import track, stats
 import time
 
-# @track_instance(max_depth=5) # works
-# @track_instance(max_depth=5, exclude=["func_e", "func_d"]) # works
-@track_instance(max_depth=5, include=["Baz"], exclude=["Qux"]) # fails
+# @track(max_depth=5)
+# @track(max_depth=5, exclude=["func_e", "func_d"])
+# @track(max_depth=5, include=["func_e", "func_d"])
+@track(max_depth=5, include=["Baz"], exclude=["func_e"])
 class Foo:
     def __init__(self):
         self.bar = Bar()
