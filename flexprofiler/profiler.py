@@ -18,8 +18,7 @@ import statistics
 import inspect
 import sys
 import re
-import types
-
+from typing import Any
 
 # Color gradient from green (fast) to red (slow)
 def color_by_time(avg_time, max_time):
@@ -115,6 +114,8 @@ def get_spacer(before_spacer, max_length):
 
 
 def _matches_any(name, patterns):
+    if isinstance(patterns, bool):
+        return patterns
     if not patterns:
         return False
     for pat in patterns:
@@ -129,6 +130,8 @@ def _matches_any(name, patterns):
 
 # Compile include/exclude into regex patterns for flexible matching (strings or regexes)
 def _compile_patterns(pats):
+    if isinstance(pats, bool):
+        return pats
     if pats is None:
         return None
     compiled = []
@@ -178,7 +181,7 @@ class FlexProfiler:
     >>> profiler.stats(simple=True)
     """
 
-    def __init__(self, detailed=False, record_each_call=True):
+    def __init__(self, detailed=True, record_each_call=True):
         self.exec_log = defaultdict(tuple)
 
         self.detailed = detailed
@@ -273,44 +276,15 @@ class FlexProfiler:
             and call-graph information according to the profiler configuration.
         """
         def _track_wrapper(*args, **kwargs):
-            func_name_base = inner_func.__name__
-            # Handle include/exclude logic using matchers
 
             level = len(self.call_queue)
-            if isinstance(arg_sensitive, bool):
-                is_arg_sensitive = arg_sensitive
-            else:  # list of arg names
-                is_arg_sensitive = arg_sensitive and (
-                    func_name_base in arg_sensitive
-                )
+            
             if level < max_depth:
                 # Determine whether this is a bound method by checking the
                 # wrapped function signature: treat as method only when
                 # the first parameter is named 'self' and an argument was
                 # provided.
-                try:
-                    sig = inspect.signature(inner_func)
-                    params = list(sig.parameters.keys())
-                except Exception:
-                    params = []
-
-                if params and params[0] == "self" and args:
-                    key_base = f"{args[0].__class__.__name__}.{func_name_base}"
-                else:
-                    key_base = getattr(inner_func, "__qualname__", func_name_base)
-                if is_arg_sensitive:
-                    sig = inspect.signature(inner_func)
-                    bound_args = sig.bind(*args, **kwargs)
-                    bound_args.apply_defaults()
-                    args_str = ", ".join(
-                        f"{name}={value!r}"
-                        for name, value in bound_args.arguments.items()
-                        if name != "self"
-                    )
-                    key_args = f"{key_base}({args_str})"
-                    key = key_args
-                else:
-                    key = key_base
+                key = self._get_variable_key(inner_func, *args, arg_sensitive=arg_sensitive, **kwargs)
                 self.call_queue.append(key)
 
                 # Option A: line-by-line tracing enabled
@@ -413,6 +387,41 @@ class FlexProfiler:
 
         return _track_wrapper
 
+    def _get_variable_key(self, var: Any, *args, arg_sensitive=None, **kwargs):
+        func_name_base = getattr(var, "__name__", var.__class__.__name__)
+
+        if isinstance(arg_sensitive, bool):
+            is_arg_sensitive = arg_sensitive
+        else:  # list of arg names
+            is_arg_sensitive = arg_sensitive and (
+                func_name_base in arg_sensitive
+            )
+            
+        try:
+            sig = inspect.signature(var)
+            params = list(sig.parameters.keys())
+        except Exception:
+            params = []
+
+        if params and params[0] == "self" and args:
+            key_base = f"{args[0].__class__.__name__}.{func_name_base}"
+        else:
+            key_base = getattr(var, "__qualname__", func_name_base)
+        if is_arg_sensitive:
+            sig = inspect.signature(var)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            args_str = ", ".join(
+                f"{name}={value!r}"
+                for name, value in bound_args.arguments.items()
+                if name != "self"
+            )
+            key_args = f"{key_base}({args_str})"
+            key = key_args
+        else:
+            key = key_base
+        
+        return key
     def _stats(
         self, call_graph, depth=0, is_last_list=[], unit: str = "s", simple=False
     ):
@@ -563,6 +572,9 @@ class FlexProfiler:
         depth=0,
         lines=False,
     ):
+        if getattr(instance, "__name__", None) == "_track_wrapper":
+            return instance
+
         if instance is None:  # return decorator
 
             def decorate(func):
@@ -579,11 +591,21 @@ class FlexProfiler:
             return decorate
         if depth > max_depth:
             return instance
-        include_patterns = _compile_patterns(include)
-        exclude_patterns = _compile_patterns(exclude)
+
+        if inspect.isbuiltin(instance) or isinstance(instance, (str, int, float, bytes, bool, list, tuple, dict, complex, type(None))):
+            return instance
+        # if getattr(getattr(instance, "__class__", None), "__module__", None) == "builtins":
+        #     return instance
 
         # check if instance is a class
-        is_class = isinstance(instance, type)
+        is_class = inspect.isclass(instance)
+        is_function = inspect.isfunction(instance)
+        is_method = inspect.ismethod(instance)
+        is_module = inspect.ismodule(instance)
+        is_object = not (is_class or is_function or is_method or is_module)
+
+        include_patterns = _compile_patterns(include)
+        exclude_patterns = _compile_patterns(exclude)
 
         key = getattr(instance, "__name__", instance.__class__.__name__)
         if _matches_any(key, exclude_patterns):
@@ -593,89 +615,77 @@ class FlexProfiler:
 
         next_include = include if not key_in_include else None
         if (
-            not is_class
-            and callable(instance)
+            is_function or is_method
             and not getattr(instance, "_task_tracker_decorated", False)
         ):
             # If the class was included by name, do not filter methods
             # Method-level include/exclude via regex matching
-            skip = False
-            if include_patterns is not None and not key_in_include:
-                skip = True
+            lines_patterns = _compile_patterns(lines)
 
-            if not skip:
+            track_lines = _matches_any(key, lines_patterns)
+            if include_patterns is None or key_in_include:
                 instance = self.wrap(
                     instance,
                     max_depth=max_depth,
                     arg_sensitive=arg_sensitive,
-                    lines=lines,
+                    lines=track_lines,
                 )
 
-        for attr in dir(instance):
-            value = getattr(instance, attr)
-            is_function = isinstance(value, (types.FunctionType, types.MethodType))
-            if attr == "__init__" and is_class:
-                original_init = value
-
-                # propagate tracking to all sub classes recursively
-                def new_init(this, *args, **kwargs):
-                    # Call the original __init__ whether it's a function
-                    # descriptor (unbound) or a bound method. Then propagate
-                    # tracking to the newly-initialized object.
-                    try:
-                        # Common case: original_init expects the instance as
-                        # first argument.
-                        original_init(this, *args, **kwargs)
-                    except TypeError:
-                        # Fallback: original_init may be a bound method where
-                        # 'this' is already bound, so call without passing it.
-                        original_init(*args, **kwargs)
-
-                    self.track(
-                        this,
-                        max_depth=max_depth,
-                        arg_sensitive=arg_sensitive,
-                        include=next_include,
-                        exclude=exclude,
-                        lines=lines,
-                    )
-
-                # Prefer setting __init__ on the class object to avoid the
-                # "method object attribute '__init__' is read-only" error
-                # which occurs when attempting to overwrite a bound method on
-                # an instance. If `instance` is a class, set directly; when
-                # it's an object, set on its class.
-                target = instance if is_class else getattr(instance, "__class__", None)
+        if is_class:
+            original_init = getattr(instance, "__init__", None)
+            def new_init(this, *args, **kwargs):
+                # Call the original __init__ whether it's a function
+                # descriptor (unbound) or a bound method. Then propagate
+                # tracking to the newly-initialized object.
                 try:
-                    if target is not None:
-                        setattr(target, "__init__", new_init)
-                    else:
-                        setattr(instance, "__init__", new_init)
-                except Exception:
-                    # Best-effort: if we cannot patch __init__, skip it.
-                    pass
-            if attr.startswith("__"):
-                continue
-            if not (
-                hasattr(value, "__class__") and hasattr(value.__class__, "__module__")
-            ):
-                continue
-            # filter all attributes that are not functions, methods or custom objects
+                    # Common case: original_init expects the instance as
+                    # first argument.
+                    original_init(this, *args, **kwargs)
+                except TypeError:
+                    # Fallback: original_init may be a bound method where
+                    # 'this' is already bound, so call without passing it.
+                    original_init(*args, **kwargs)
 
-            if not is_function:
-                # Skip builtin-typed objects
-                try:
-                    mod = value.__class__.__module__
-                except Exception:
-                    continue
-                if mod.startswith("builtins"):
-                    continue
+                self.track(
+                    this,
+                    max_depth=max_depth,
+                    arg_sensitive=arg_sensitive,
+                    include=next_include,
+                    exclude=exclude,
+                    lines=lines,
+                    depth=depth
+                )
 
-            if getattr(value, "__name__", None) == "_track_wrapper":
+            # Prefer setting __init__ on the class object to avoid the
+            # "method object attribute '__init__' is read-only" error
+            # which occurs when attempting to overwrite a bound method on
+            # an instance. If `instance` is a class, set directly; when
+            # it's an object, set on its class.
+            target = instance if is_class else getattr(instance, "__class__", None)
+            try:
+                if target is not None:
+                    setattr(target, "__init__", new_init)
+                else:
+                    setattr(instance, "__init__", new_init)
+            except Exception:
+                # Best-effort: if we cannot patch __init__, skip it.
+                pass
+        if is_object:
+            pass
+
+        # propagate recursion to all members
+        for attr, value in inspect.getmembers(instance):
+
+            if attr.startswith("__"): # ignore dunder methods
                 continue
-
             if getattr(value, "_task_tracker_decorated", False):
                 continue
+
+            # if not (
+            #     hasattr(value, "__class__") and hasattr(value.__class__, "__module__")
+            # ):
+            #     continue
+            # filter all attributes that are not functions, methods or custom objects
 
             value = self.track(
                 value,
@@ -684,11 +694,14 @@ class FlexProfiler:
                 include=next_include,
                 exclude=exclude,
                 depth=depth + 1,
+                lines=lines
             )
+            try:
+                setattr(instance, attr, value)
+            except Exception as e:
+                print(f"couldn't track attribute {attr}")
 
-            setattr(instance, attr, value)
-
-        if is_class:
+        if is_class or is_object:
             setattr(instance, "_task_tracker_decorated", True)
 
         return instance

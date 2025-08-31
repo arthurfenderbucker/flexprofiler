@@ -14,3 +14,4 @@ _default_profiler = FlexProfiler(detailed=True, record_each_call=True)
 
 stats = _default_profiler.stats
 track = _default_profiler.track
+default_profiler = _default_profiler
